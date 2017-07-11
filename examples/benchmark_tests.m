@@ -2,14 +2,12 @@
 
 clearvars; close all;
 
-startup
-
 global fIter 
 fIter   = 1;
 mtype   = 1;
 noise   = 1;
 
-path    = strcat(pwd,'/results_paper_final/benchmark/model',num2str(mtype),'/');
+path    = strcat(pwd,'/results/');
 
 %% load a phantom image
 if (mtype==1)
@@ -51,6 +49,7 @@ x           = im(:);
 fig1 = figure(1); imagesc(im,[0 1]); axis equal tight; axis off; colormap gray
 saveas(fig1,strcat(path,'model',num2str(mtype)),'epsc');
 saveas(fig1,strcat(path,'model',num2str(mtype)),'fig');
+pause(0.001);
 
 imV = im(:);
 imshape = zeros(size(imV));
