@@ -11,8 +11,8 @@ Installation
 This toolbox requires Matlab version *R2016a or later*.  In
 particular we require following packages to be pre-install to run this toolbox.
 
-[ASTRA-Toolbox](https://github.com/astra-toolbox/astra-toolbox)
-[SPOT Operator](https://github.com/mpf/spot)
+1. [ASTRA-Toolbox](https://github.com/astra-toolbox/astra-toolbox)  
+2. [SPOT Operator](https://github.com/mpf/spot)  
 
 Please run startup.m file before running the scripts in example folder.
 
