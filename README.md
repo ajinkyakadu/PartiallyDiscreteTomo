@@ -16,8 +16,11 @@ particular we require following packages to be pre-install to run this toolbox.
 
 Please run startup.m file before running the scripts in example folder.
 
-Paper:
+Paper
+------------
+
 The theory and experiment details are available in the paper "A parametric level-set method for partially discrete tomography". The paper is available on ArXiv : [arXiv:1704.00568](https://arxiv.org/abs/1704.00568)
+
 
 Feel free to contact me with any questions, suggestions, etc.
 
