@@ -1,4 +1,4 @@
-function [A,nr,XX,ZZ] = generateKernel(x,z,options)
+function [A,nr,Xc,Zc] = generateKernel(x,z,options)
 %
 % Generates RBF Kernel matrix for given problem
 %
@@ -37,6 +37,7 @@ tau     = getoptions(options,'tau',5);
 eta     = getoptions(options,'eta',4);
 nouter  = getoptions(options,'nouter',2);
 rtype   = getoptions(options,'rtype','compact');
+ctype   = getoptions(options,'ctype',4);
 ltype   = getoptions(options,'ltype','L2');
 
 
@@ -63,7 +64,12 @@ switch rtype
         kernelM = @(r) exp(-r.^2);
         ki = 3.3;
     case 'compact'          % Compactly-supported RBF (Wendland C4)
-        kernelM = @(r) max(1-r,0).^8.*(32*r.^3 + 25*r.^2 + 8*r + 1);
+        switch ctype
+            case 1
+                kernelM = @(r) max(1-r,0).^2;
+            case 4
+                kernelM = @(r) max(1-r,0).^8.*(32*r.^3 + 25*r.^2 + 8*r + 1);
+        end
         ki = 1;
 end
 

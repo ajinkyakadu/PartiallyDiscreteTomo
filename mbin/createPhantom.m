@@ -1,4 +1,4 @@
-function [m,bgm] = createPhantom(x,z,options)
+function [m,bgm,mS,bgmS] = createPhantom(x,z,options)
 %createPhantom Generates a random phantom model of discrete anomaly in
 %       variational background
 % Summary:
@@ -43,6 +43,7 @@ smooth  = getoptions(options.bg,'smooth',10);
 bmax    = getoptions(options.bg,'bmax',0.5);
 type    = getoptions(options,'type',1);
 rseed   = getoptions(options,'rseed',1);
+gV      = getoptions(options,'gV',[]);
 
 nz = length(z);
 nx = length(x);
@@ -60,9 +61,27 @@ m0 = imfilter(m0,H,'replicate');
 m0 = m0 - min(m0(:));
 m0 = (bmax/max(m0(:)))*m0;
 
-bgm = m0;
+bgm = m0(:);
+
+% segmented background for DART
+bgmS = bgm(:);
+gvl = gV(1);
+gvr = (gV(1)+gV(2))/2;
+bgmS((bgm >= gvl) & (bgm <gvr)) = gV(1);
+for i=2:(length(gV)-1)
+    gvl = (gV(i-1)+gV(i))/2;
+    gvr = (gV(i)+gV(i+1))/2;
+    bgmS((bgm >= gvl) & (bgm <gvr) ) = gV(i);
+end
+gvl = (gV(end-1)+gV(end))/2;
+gvr = gV(end);
+bgmS((bgm >= gvl) & (bgm <gvr)) = gV(end);
+
+bgm = reshape(bgm,nz,nx);
+bgmS= reshape(bgmS,nz,nx);
 
 m = m0;
+mS = bgmS;
 
 switch type
     case 1
@@ -80,18 +99,21 @@ switch type
         % locate points inside the boundary and set them to salt velocity
         [in,~] = inpolygon(xx,zz,xv,zv);
         m(in) = m1;
+        mS(in)= m1;
     
     case 2
         I = imread([pwd '/phantoms/foam_128.png']);
         n = size(I,1);
         I = double(I(:)/max(I(:)));
         m(I == 1) = m1;
+        mS(I==1)  = m1;
         
     case 3
         I = imread([pwd '/phantoms/molecule_128.png']);
         n = size(I,1);
         I = double(I(:)/max(I(:)));
         m(I==1) = m1;
+        mS(I==1)= m1;
 end
 
 end

@@ -25,7 +25,9 @@ end
 type    = getoptions(options,'type','compact_new');
 epsi    = getoptions(options,'epsi',0.1);
 thr     = getoptions(options,'thr',0);
-k       = getoptions(options,'k',0.1);
+k       = getoptions(options,'k',0);
+
+% x = x - (min(x)+max(x))/2;
 
 x = x - thr;
 

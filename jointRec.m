@@ -1,4 +1,4 @@
-function [xs,Op] = jointRec(W,p,lambda,kappa,MaxIter,innerMaxIter,ipStr)
+function [xs,Op] = jointRec(W,p,x0,A,L,lambda,kappa,MaxIter,innerMaxIter,ipStr)
 %jointRec Joint reconstruction framework for linear inverse problem
 %   The problem Wx = p, is split into two problems by defining
 %       x = [1 - h(\phi)]u0 + u1*h(\phi)
@@ -20,170 +20,165 @@ function [xs,Op] = jointRec(W,p,lambda,kappa,MaxIter,innerMaxIter,ipStr)
 % Output
 %   xs      - final solution
 
-newMethod = ipStr.newMethod;
-
 
 %% define u0 and u1
 
-global u0
-u1 = 1;                     % anomaly parameter, set to be 1
+global u0 
+u1      = 1;                    % anomaly parameter, set to be 1
+u0      = zeros(size(W,2),1);   % initialize u0
+ng      = sqrt(size(W,2));
 
-[~,nW] = size(W);
-
-ng = sqrt(size(W,2));
-
-u0 = zeros(nW,1);    % initialize u0
 
 %% get RBF Kernel
 
-Koptions.tau    = 5;        % how coarse the RBF grid should be wrt computational grid
-Koptions.eta    = 4;        % parameter to control the spread of RBF
-Koptions.nouter = 2;        % RBF layers outside compuational domain 
-Koptions.rtype  = 'compact';% RBF type
-Koptions.ltype  = 'L2';     % distance norms for RBF
-
-x = 0:(1/(ng-1)):1;    % x-dn vector 
-z = 0:(1/(ng-1)):1;    % z-dn vector
-
-[A,nr] = generateKernel(x,z,Koptions);   
-A = opMatrix(A);
+% Koptions.tau    = 5;        % how coarse the RBF grid should be wrt computational grid
+% Koptions.eta    = 4;        % parameter to control the spread of RBF
+% Koptions.nouter = 2;        % RBF layers outside compuational domain 
+% Koptions.rtype  = 'compact';% RBF type
+% Koptions.ltype  = 'L2';     % distance norms for RBF
+% 
+% x               = 0:(1/(ng-1)):1;    % x-dn vector 
+% z               = 0:(1/(ng-1)):1;    % z-dn vector
+% 
+% [A,nr]          = generateKernel(x,z,Koptions);   
+% A               = opMatrix(A);
 
 %% get Regularizer
 
-n = [ng ng];  % number of gridpoints
-regMode = 1;    % type of regularizer/penalty, 1: Tikhonov for smoothness, 2: penalty for x - x0
+% n       = [ng ng];  % number of gridpoints
+regMode = 1;        % type of regularizer/penalty, 1: Tikhonov for smoothness, 2: penalty for x - x0
 
-L = opTV(ng);
 
 %% initialize alpha, level-set parameter
 
-x0 = -1*ones(nr);
-
-% make sure to put some positive RBF to create level-set boundary
-x0(floor(nr(1)/2)-3:floor(nr(1)/2),floor(nr(2)/2):floor(nr(2)/2)+3) = 1;    % initial level-set
-
-x0 = x0(:);
+% x0      = -1*ones(nr);
+% 
+% % make sure to put some positive RBF to create level-set boundary
+% x0(floor(nr(1)/2)-3:floor(nr(1)/2),floor(nr(2)/2):floor(nr(2)/2)+3) = 2;    % initial level-set
+% 
+% x0      = x0(:);
 
 %% minimize over alpha
 
-fh = @(x) funcPhi(x,A,u1,W,p,L,regMode,lambda,kappa,innerMaxIter,ipStr);
+fh                      = @(x) funcPhi(x,A,u1,W,p,L,regMode,lambda,kappa,innerMaxIter,ipStr);
+options                 = optimoptions('fminunc','Algorithm','trust-region','GradObj','on',...
+                            'Hessian','user-supplied','HessMult',@(Hinfo,Y)hmfun(Hinfo,Y),'MaxPCGIter',10);
+options.Display         = 'iter';
+options.MaxIter         = MaxIter;
+options.TolFun          = 1e-6;
+options.TolX            = 1e-6;
+% options.TolPCG          = 1e-2;
+% options.PrecondBandWidth= 3;
 
-options = optimoptions('fminunc','Algorithm','trust-region','GradObj','on',...
-    'Hessian','user-supplied','HessMult',@(Hinfo,Y)hmfun(Hinfo,Y));
-
-options.Display = 'off';
-options.MaxIter = MaxIter;
-options.TolFun = 1e-6;
-options.TolX   = 1e-6;
-
+tic;
 [xf,funval,exitflag,Op] = fminunc_new(fh,x0,options);
+toc
 
+Op.xf       = xf;
 Op.funval   = funval;
 Op.exitflag = exitflag;
-%% reduce the penalty on u0
-
-if newMethod.run
-    options.MaxIter = newMethod.maxIter;
-    for i=1:newMethod.maxLoop
-        if newMethod.changeL
-            lambda = lambda*newMethod.recFactL;
-        end
-        if newMethod.changeHW
-            kappa  = kappa*newMethod.recFactHW;
-        end
-        fprintf('\n running optimization for lambda %0.2g \n \n',lambda)
-        fh = @(x) funcPhi(x,A,u1,W,p,L,regMode,lambda,kappa,innerMaxIter,ipStr);
-        xf = fminunc_new(fh,xf,options);
-    end
-end
 
 %% final value
-Axf = A*xf;
-cPhi = 3*kappa*(max(Axf)-min(Axf));
-hopt.epsi = 0;
-hxf = heavi(Axf-cPhi,hopt);
-xs = (1 - hxf).*u0 + hxf*u1;
-
+Axf         = A*xf;
+hopt.epsi   = 0;
+hopt.thr    = kappa*(max(Axf)-min(Axf));
+hxf         = heavi(Axf,hopt);
+xs          = (1 - hxf).*u0 + hxf*u1;
 
 end
 
 
 function [f,g,Hinfo] = funcPhi(x,A,u1,W,p,L,regMode,lambda,kappa,innerMaxIter,ipStr)
 
-global u0
-global fIter
-
+global u0 fIter
 
 fig         = ipStr.fig;
-
-[n,~] = size(A);
+% [n,~]       = size(A);
 
 %% get h(\phi) and its sensitivity d(\phi)
 
-Ax = A*x;
-cPhi = 3*kappa*(max(Ax)-min(Ax));
-hopt.epsi = 0; % kappa*(max(Ax) - min(Ax));
-[h,~] = heavi(Ax-cPhi,hopt);
+Ax          = A*x;
+hopt.epsi   = 0;    % kappa*(max(Ax) - min(Ax));
+[h,~]       = heavi(Ax,hopt);
 
 %% minimize over u_0
 
-Wu = [W*opDiag(1-h);sqrt(lambda)*L];
+% lambda = ((0.9)^fIter) * lambda;
+Wu          = [W*opDiag(1-h);sqrt(lambda)*L];
 
 % get data vector 'pu', according to a regularization/penalty
-if regMode == 1
-    pu = [p-u1*(W*h);zeros(size(L,1),1)];
-elseif regMode == 2
-    u0estimate = 0.25;
-    pu = [p-u1*(W*h);u0estimate*ones(n,1)];
-end
+% if regMode == 1
+pu      = [p-u1*(W*h);zeros(size(L,1),1)];
+% elseif regMode == 2
+%     u0est   = 0.25;
+%     pu      = [p-u1*(W*h);u0est*ones(n,1)];
+% end
 
 % optimize over u0, use lsqlin with bounds constraints
-[u0,~] = lsqr(Wu,pu,1e-3,innerMaxIter,[],[]);
+[u0,~]      = lsqr(Wu,pu,1e-3,innerMaxIter,[],[]);
 
 
 
 %% define F and data
 
-hopt.epsi = kappa*(max(Ax) - min(Ax));
-[h,d] = heavi(Ax-cPhi,hopt);
+hopt.epsi   = kappa*(max(Ax) - min(Ax));
+[h,d]       = heavi(Ax,hopt);
 
-Um = opDiag(u1-u0);
-D  = opDiag(d);
-F = W*(Um*h);
-data = p - W*u0;
+Um          = opDiag(u1-u0);
+D           = opDiag(d);
+F           = W*(Um*h);
+data        = p - W*u0;
 
 
 %% function, gradient, Hessian info
 
-f = 0.5*norm(F - data,2).^2;
-g0 = D*(Um*(W'*(F - data)));
-g = A'*(g0);
-Hinfo = W*Um*D*A;
-
+f           = 0.5*norm(F - data,2).^2;
+% g0          = D*(Um*(W'*(F - data)));
+g           = A'*(D*(Um*(W'*(F - data))));
+Hinfo       = W*Um*D*A;
+% xs          = (1 - h).*u0 + h*u1;
 
 %% plots
 
-xs = (1 - h).*u0 + h*u1;
-
-if fig.show
-    fig99 = figure(99);
-    ng = sqrt(size(Ax,1));
-    subplot(2,2,1); imagesc(reshape(Ax,ng,ng));axis equal tight; axis off;% colorbar; 
-    title(sprintf('level-set function %.2g',lambda),'Fontsize',10);
-    subplot(2,2,2); imagesc(reshape(abs(g0),ng,ng));axis equal tight;axis off;% colorbar; 
-    title(sprintf('level-set sensitivity %.2g',lambda),'Fontsize',10);
-    subplot(2,2,3); imagesc(reshape(xs,ng,ng));axis equal tight;axis off;% colorbar; 
-    title(sprintf('reconstructed model %.2g',lambda),'Fontsize',10);
-    subplot(2,2,4); imagesc(reshape(u0,ng,ng),[0 0.5]);axis equal tight;axis off;% colorbar;
-    title(sprintf('reconstructed background %.2g',lambda),'Fontsize',10);
-    pause(0.01);
-    
-    if fig.save
-        fig99.PaperPositionMode = 'auto';
-        saveas(fig99,strcat(fig.path,'evol',num2str(fIter)),'png');
-        fIter = fIter + 1;
-    end
-end
+% if fig.show
+%     fig99 = figure(99);
+%     ng = sqrt(size(Ax,1));
+%     [zz,xx] = ndgrid(linspace(0,1,ng)); 
+%     AxM = reshape(Ax,[ng ng]);
+%     % AxD = reshape(d,[ng ng]);
+%     % Ztr = (max(Ax) + min(Ax))/2;
+%     Ztrm= min(Ax) - (max(Ax)-min(Ax));
+%     surfl(xx,zz,AxM); shading interp; hold on;
+%     lighting gouraud
+%     hfig1 = surf(xx,zz,0*ones(size(AxM)),AxM,'EdgeColor','none');
+%     hfig1.FaceAlpha = 0.25;
+%     hfig2 = surf(xx,zz,Ztrm*ones(size(AxM)),AxM,'EdgeColor','none');
+%     hfig2.FaceAlpha = 0.5;
+%     % hfig3 = surf(xx,zz,2*Ztrm*ones(size(AxD)),AxD,'EdgeColor','none');
+%     % hfig3.FaceAlpha = 0.5;
+%     view(-20,25); set(gca,'GridAlpha',0);set(gca,'color','none');
+%     xlabel('x','FontSize',12); ylabel('y','FontSize',12); axis([0 1 0 1 Ztrm max(Ax)]);
+%     hold off;
+%     pause(0.001);
+% %     fig99 = figure(99);
+% %     ng = sqrt(size(Ax,1));
+% %     subplot(2,2,1); imagesc(reshape(Ax,ng,ng));axis equal tight; axis off;% colorbar; 
+% %     title(sprintf('level-set function %.2g',lambda),'Fontsize',10);
+% %     subplot(2,2,2); imagesc(reshape(abs(g0),ng,ng));axis equal tight;axis off;% colorbar; 
+% %     title(sprintf('level-set sensitivity %.2g',lambda),'Fontsize',10);
+% %     subplot(2,2,3); imagesc(reshape(xs,ng,ng));axis equal tight;axis off;% colorbar; 
+% %     title(sprintf('reconstructed model %.2g',lambda),'Fontsize',10);
+% %     subplot(2,2,4); imagesc(reshape(u0,ng,ng),[0 0.5]);axis equal tight;axis off;% colorbar;
+% %     title(sprintf('reconstructed background %.2g',lambda),'Fontsize',10);
+% %     pause(0.01);
+%     
+%     if fig.save
+%         fig99.PaperPositionMode = 'auto';
+%         saveas(fig99,strcat(fig.path,'evol',num2str(fIter)),'png');
+%         fIter = fIter + 1;
+%     end
+% end
+% fIter = fIter + 1;
 end
 
 
@@ -192,8 +187,6 @@ function [Fv] = hmfun(Hinfo,Y)
 % Input
 %   Hinfo   - Hessian information from objective function
 %   Y       - vector, this comes from optimization procedure
-%   W       - Linear operator
-%   A       - RBF Kernel Matrix
 %
 % Output
 %   Fv      - Matrix-vector product of Hessian and vector
